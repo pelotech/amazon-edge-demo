@@ -1,0 +1,121 @@
+# Demo Architecture
+
+This diagram represents the AWS infrastructure defined in `terraform/` with the `kustomize/` overlays applied to the EKS cluster.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  AWS Region: us-west-2                                                                              │
+│                                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │  VPC: 172.16.0.0/16   (map_public_ip_on_launch = true)                                         │ │
+│  │                                                                                                 │ │
+│  │  ┌─ Public Subnet ────────┐ ┌─ Public Subnet ────────┐ ┌─ Public Subnet ────────┐             │ │
+│  │  │  172.16.100.0/24       │ │  172.16.101.0/24       │ │  172.16.102.0/24       │             │ │
+│  │  │  us-west-2a            │ │  us-west-2b  (NAT GW)  │ │  us-west-2c            │             │ │
+│  │  │                        │ │                        │ │                        │             │ │
+│  │  │  ╔══════════════════╗  │ │  ╔══════════════════╗  │ │  ╔══════════════════╗  │             │ │
+│  │  │  ║ EKS Node (t3a.sm)║  │ │  ║ EKS Node (t3a.sm)║  │ │  ║ EKS Node (t3a.sm)║  │             │ │
+│  │  │  ║                  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ║  ┌────────────┐  ║  │ │  ║  ┌────────────┐  ║  │ │  ║  ┌────────────┐  ║  │             │ │
+│  │  │  ║  │ images pod │  ║  │ │  ║  │ images pod │  ║  │ │  ║  │ images pod │  ║  │             │ │
+│  │  │  ║  │ :30080     │  ║  │ │  ║  │ :30080     │  ║  │ │  ║  │ :30080     │  ║  │             │ │
+│  │  │  ║  └────────────┘  ║  │ │  ║  └────────────┘  ║  │ │  ║  └────────────┘  ║  │             │ │
+│  │  │  ║  ┌────────────┐  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ║  │ videos pod │  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ║  │ :30081     │  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ║  └────────────┘  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ╚══════════════════╝  │ │  ╚══════════════════╝  │ │  ╚══════════════════╝  │             │ │
+│  │  │  EKS: default ns       │ │  EKS: default ns       │ │  EKS: default ns       │             │ │
+│  │  │  (kustomize/ec2)       │ │  (kustomize/ec2)       │ │  (kustomize/ec2)       │             │ │
+│  │  │  anti-affinity ◄───────┼─┼────────────────────────┼─┼──► spreads 1 pod/node │             │ │
+│  │  │                        │ │                        │ │                        │             │ │
+│  │  │  ╔══════════════════╗  │ │  ╔══════════════════╗  │ │  ╔══════════════════╗  │             │ │
+│  │  │  ║ ECS EC2 (t3a.sm) ║  │ │  ║ ECS EC2 (t3a.sm) ║  │ │  ║ ECS EC2 (t3a.sm) ║  │             │ │
+│  │  │  ║                  ║  │ │  ║                  ║  │ │  ║                  ║  │             │ │
+│  │  │  ║  ┌────────────┐  ║  │ │  ║  ┌────────────┐  ║  │ │  ║  ┌────────────┐  ║  │             │ │
+│  │  │  ║  │ images task│  ║  │ │  ║  │ images task│  ║  │ │  ║  │ images task│  ║  │             │ │
+│  │  │  ║  │ bridge :80 │  ║  │ │  ║  │ bridge :80 │  ║  │ │  ║  │ bridge :80 │  ║  │             │ │
+│  │  │  ║  └────────────┘  ║  │ │  ║  └────────────┘  ║  │ │  ║  └────────────┘  ║  │             │ │
+│  │  │  ╚══════════════════╝  │ │  ╚══════════════════╝  │ │  ╚══════════════════╝  │             │ │
+│  │  │  ECS: pictures svc     │ │  ECS: pictures svc     │ │  ECS: pictures svc     │             │ │
+│  │  │  spread: AZ + instance◄┼─┼────────────────────────┼─┼──► 1 task per instance│             │ │
+│  │  │                        │ │                        │ │                        │             │ │
+│  │  └────────────────────────┘ └────────────────────────┘ └────────────────────────┘             │ │
+│  │                                                                                                 │ │
+│  │  ┌─ Private Subnet ───────┐ ┌─ Private Subnet ───────┐ ┌─ Private Subnet ───────┐             │ │
+│  │  │  172.16.0.0/24         │ │  172.16.1.0/24         │ │  172.16.2.0/24         │             │ │
+│  │  │  us-west-2a            │ │  us-west-2b            │ │  us-west-2c            │             │ │
+│  │  │  (egress via NAT GW)   │ │  (egress via NAT GW)   │ │  (egress via NAT GW)   │             │ │
+│  │  └────────────────────────┘ └────────────────────────┘ └────────────────────────┘             │ │
+│  │                                                                                                 │ │
+│  │  ┌─ Fargate (AWS-managed placement within assigned subnets) ───────────────────────────────┐  │ │
+│  │  │                                                                                          │  │ │
+│  │  │  EKS Fargate (kustomize/fargate)              ECS Fargate                                │  │ │
+│  │  │  Namespace: fargate                           Capacity Provider: FARGATE                  │  │ │
+│  │  │  Subnets: private (Fargate profile pinned)    Subnets: public + public IP (awsvpc)       │  │ │
+│  │  │                                                                                          │  │ │
+│  │  │  ┌─────────────┐ ┌─────────────┐             ┌─────────────┐                             │  │ │
+│  │  │  │ images pod  │ │ videos pod  │             │ videos task │                             │  │ │
+│  │  │  │ :30082      │ │ :30083      │             │ awsvpc :80  │                             │  │ │
+│  │  │  │ replica: 1  │ │ replica: 1  │             │ public IP   │                             │  │ │
+│  │  │  └─────────────┘ └─────────────┘             └─────────────┘                             │  │ │
+│  │  │                                                                                          │  │ │
+│  │  │  ⚠ No anti-affinity or spread rules ── single replicas, subnet chosen by AWS            │  │ │
+│  │  └──────────────────────────────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                                                 │ │
+│  │  ┌──────────────────────────────────────┐                                                       │ │
+│  │  │  IAM: demo_readonly                  │                                                       │ │
+│  │  │  Access: view-only (AmazonEKSViewPol)│                                                       │ │
+│  │  └──────────────────────────────────────┘                                                       │ │
+│  │                                                                                                 │ │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                     │
+│  Container Images: ghcr.io/pelotech/amazon-edge-demo-{images,videos}                                       │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  LEGEND
+  ══════  EC2 instance boundary
+  ──────  Subnet / logical boundary
+  ◄────►  Scheduling constraint (forces spread across subnets)
+  ⚠       No placement constraint (AWS picks subnet)
+```
+
+## Subnet Placement
+
+| Workload                           | Compute    | Subnet Spread                                           | Replicas |
+|------------------------------------|------------|---------------------------------------------------------|----------|
+| EKS amazon-edge-images (default)   | EC2 Nodes  | All 3 public subnets (pod anti-affinity on hostname)    | 3        |
+| EKS amazon-edge-videos (default)   | EC2 Nodes  | Single public-subnet node, no affinity rule             | 1        |
+| EKS amazon-edge-images (fargate)   | Fargate    | Private subnets (Fargate profile pinned), AWS-placed    | 1        |
+| EKS amazon-edge-videos (fargate)   | Fargate    | Private subnets (Fargate profile pinned), AWS-placed    | 1        |
+| ECS pictures (images)              | EC2        | All 3 public subnets (spread: AZ + instance)            | 3        |
+| ECS videos                         | Fargate    | Public subnets with public IP (awsvpc), AWS-placed      | 1        |
+
+**Key insight:** Only the images workloads on EC2 (both EKS and ECS) are guaranteed to spread across all 3 public subnets. The EKS images deployment uses `requiredDuringScheduling` pod anti-affinity on hostname, and the ECS pictures service uses `spread` placement on AZ + instance ID. EKS Fargate pods land in the private subnets (pinned by the Fargate profile) but AWS picks which of the three. ECS videos runs on Fargate in the public subnets with `assign_public_ip = true`, again AWS-placed.
+
+## Terraform Resources
+
+- **VPC** — 172.16.0.0/16, 3 AZs, single NAT gateway, `map_public_ip_on_launch = true`
+- **Public subnets** — 172.16.100.0/24, 172.16.101.0/24, 172.16.102.0/24
+- **Private subnets** — 172.16.0.0/24, 172.16.1.0/24, 172.16.2.0/24
+- **EKS** — v1.35, public+private endpoint, 4 addons
+- **EKS Node Group** — 3x t3a.small on-demand, AL2023, 20GB gp3 encrypted, **deployed in public subnets**
+- **EKS Fargate Profile** — selector on `fargate` namespace, pinned to private subnets
+- **ECS Cluster** — dual capacity providers (EC2 + Fargate)
+- **ECS ASG** — 3x t3a.small, ECS-optimized AL2023, SSM enabled, **deployed in public subnets** (public IPs auto-assigned)
+- **ECS Services** — pictures (3 EC2 tasks, bridge, public subnets) + videos (1 Fargate task, awsvpc in public subnets with `assign_public_ip = true`)
+- **IAM** — `demo-readonly` user (see below)
+
+## Demo Access
+
+| Field       | Value                                              |
+|-------------|----------------------------------------------------|
+| **Console** | https://580386492357.signin.aws.amazon.com/console |
+| **Username**| `demo-readonly`                                    |
+| **Password**| Ask your administrator                             |
+
+The `demo-readonly` user has read-only access to:
+
+- **VPC** — view subnets, route tables, security groups, NAT gateways
+- **ECS** — view clusters, services, tasks, task definitions
+- **EKS** — view clusters, node groups, Fargate profiles + Kubernetes `view-only` cluster role
